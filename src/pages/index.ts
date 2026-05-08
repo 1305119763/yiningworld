@@ -1,0 +1,11 @@
+export { Home } from './Home';
+export { Login } from './Login';
+export { Register } from './Register';
+export { Dashboard } from './Dashboard';
+export { Vocabulary } from './Vocabulary';
+export { Grammar } from './Grammar';
+export { Speaking } from './Speaking';
+export { Listening } from './Listening';
+export { Community } from './Community';
+export { Achievements } from './Achievements';
+export { Profile } from './Profile';
