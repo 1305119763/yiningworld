@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from './store';
+import { useAuthStore, useProgressStore, useAchievementStore, useCommunityStore } from './store';
 import {
   Home,
   Login,
@@ -21,6 +21,29 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 function App() {
+  const { loadUser, isAuthenticated } = useAuthStore();
+  const { fetchProgress } = useProgressStore();
+  const { fetchMyAchievements } = useAchievementStore();
+  const { fetchPosts, fetchGroups } = useCommunityStore();
+
+  // 应用启动时加载用户数据
+  useEffect(() => {
+    const initApp = async () => {
+      await loadUser();
+    };
+    initApp();
+  }, [loadUser]);
+
+  // 用户登录后加载相关数据
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchProgress();
+      fetchMyAchievements();
+      fetchPosts();
+      fetchGroups();
+    }
+  }, [isAuthenticated, fetchProgress, fetchMyAchievements, fetchPosts, fetchGroups]);
+
   return (
     <BrowserRouter>
       <Routes>

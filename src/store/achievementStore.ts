@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { Achievement } from '../types';
 import { useAuthStore } from './authStore';
+import { api } from '../lib/api';
 
 const achievements: Achievement[] = [
   {
@@ -99,7 +99,11 @@ const achievements: Achievement[] = [
 interface AchievementState {
   achievements: Achievement[];
   unlockedAchievements: Record<string, string[]>;
-  checkAchievements: (userId: string, stats: {
+  myAchievements: string[];
+  isLoading: boolean;
+  error: string | null;
+  fetchMyAchievements: () => Promise<void>;
+  checkAchievements: (stats: {
     lessonsCompleted: number;
     vocabularyLearned: number;
     streak: number;
@@ -109,96 +113,61 @@ interface AchievementState {
     totalXP: number;
     posts: number;
     comments: number;
-  }) => Achievement[];
+  }) => Promise<Achievement[]>;
   getUnlockedAchievements: (userId: string) => Achievement[];
   isAchievementUnlocked: (userId: string, achievementId: string) => boolean;
 }
 
-export const useAchievementStore = create<AchievementState>()(
-  persist(
-    (set, get) => ({
-      achievements,
-      unlockedAchievements: {},
+export const useAchievementStore = create<AchievementState>()((set, get) => ({
+  achievements,
+  unlockedAchievements: {},
+  myAchievements: [],
+  isLoading: false,
+  error: null,
 
-      checkAchievements: (userId: string, stats) => {
-        const unlocked = get().unlockedAchievements[userId] || [];
-        const newUnlocked: Achievement[] = [];
-
-        achievements.forEach((achievement) => {
-          if (unlocked.includes(achievement.id)) return;
-
-          const { type, value } = achievement.requirement;
-          let conditionMet = false;
-
-          switch (type) {
-            case 'lessons':
-              conditionMet = stats.lessonsCompleted >= value;
-              break;
-            case 'vocabulary':
-              conditionMet = stats.vocabularyLearned >= value;
-              break;
-            case 'streak':
-              conditionMet = stats.streak >= value;
-              break;
-            case 'grammar_accuracy':
-              conditionMet = stats.grammarAccuracy >= value;
-              break;
-            case 'speaking':
-              conditionMet = stats.speakingPracticed >= value;
-              break;
-            case 'listening':
-              conditionMet = stats.listeningPracticed >= value;
-              break;
-            case 'total_xp':
-              conditionMet = stats.totalXP >= value;
-              break;
-            case 'posts':
-              conditionMet = stats.posts >= value;
-              break;
-            case 'comments':
-              conditionMet = stats.comments >= value;
-              break;
-          }
-
-          if (conditionMet) {
-            newUnlocked.push(achievement);
-            unlocked.push(achievement.id);
-          }
-        });
-
-        if (newUnlocked.length > 0) {
-          set((state) => ({
-            unlockedAchievements: {
-              ...state.unlockedAchievements,
-              [userId]: unlocked,
-            },
-          }));
-
-          const authStore = useAuthStore.getState();
-          if (authStore.user) {
-            const totalReward = newUnlocked.reduce((sum, a) => sum + a.xpReward, 0);
-            authStore.addXP(totalReward);
-            authStore.updateUser({
-              achievements: [...(authStore.user.achievements || []), ...newUnlocked.map(a => a.id)],
-            });
-          }
-        }
-
-        return newUnlocked;
-      },
-
-      getUnlockedAchievements: (userId: string) => {
-        const unlocked = get().unlockedAchievements[userId] || [];
-        return achievements.filter((a) => unlocked.includes(a.id));
-      },
-
-      isAchievementUnlocked: (userId: string, achievementId: string) => {
-        const unlocked = get().unlockedAchievements[userId] || [];
-        return unlocked.includes(achievementId);
-      },
-    }),
-    {
-      name: 'achievement-storage',
+  fetchMyAchievements: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const { achievements } = await api.getMyAchievements();
+      set({ myAchievements: achievements.map((a: any) => a.achievementId), isLoading: false });
+    } catch (error: any) {
+      set({ error: error.message || '获取成就失败', isLoading: false });
     }
-  )
-);
+  },
+
+  checkAchievements: async (stats) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return [];
+
+    try {
+      const { newAchievements } = await api.checkAchievements(stats);
+      
+      if (newAchievements && newAchievements.length > 0) {
+        set((state) => ({
+          myAchievements: [...state.myAchievements, ...newAchievements.map((a: any) => a.id)],
+        }));
+
+        const authStore = useAuthStore.getState();
+        if (authStore.user) {
+          const totalReward = newAchievements.reduce((sum: number, a: any) => sum + a.xpReward, 0);
+          await authStore.addXP(totalReward);
+        }
+      }
+
+      return newAchievements || [];
+    } catch (error: any) {
+      console.error('检查成就失败:', error);
+      return [];
+    }
+  },
+
+  getUnlockedAchievements: (userId: string) => {
+    const unlocked = get().unlockedAchievements[userId] || [];
+    return achievements.filter((a) => unlocked.includes(a.id));
+  },
+
+  isAchievementUnlocked: (userId: string, achievementId: string) => {
+    const unlocked = get().unlockedAchievements[userId] || [];
+    return unlocked.includes(achievementId);
+  },
+}));

@@ -1,113 +1,99 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '../types';
-
-interface StoredUser extends User {
-  password: string;
-}
+import { api } from '../lib/api';
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, username: string, password: string) => Promise<boolean>;
   logout: () => void;
-  updateUser: (updates: Partial<User>) => void;
-  addXP: (amount: number) => void;
-  updateStreak: () => void;
+  updateUser: (updates: Partial<User>) => Promise<void>;
+  addXP: (amount: number) => Promise<void>;
+  updateStreak: () => Promise<void>;
+  loadUser: () => Promise<void>;
 }
-
-const generateId = () => Math.random().toString(36).substring(2, 15);
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
+      isLoading: false,
+      error: null,
 
       login: async (email: string, password: string) => {
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        const user = users.find((u: StoredUser) => u.email === email && u.password === password);
-        
-        if (user) {
-          const { password: _, ...userWithoutPassword } = user;
-          set({ user: userWithoutPassword, isAuthenticated: true });
+        set({ isLoading: true, error: null });
+        try {
+          const { token, user } = await api.login(email, password);
+          api.setToken(token);
+          set({ user, isAuthenticated: true, isLoading: false });
           return true;
+        } catch (error: any) {
+          set({ error: error.message || '登录失败', isLoading: false });
+          return false;
         }
-        return false;
       },
 
       register: async (email: string, username: string, password: string) => {
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        
-        if (users.find((u: StoredUser) => u.email === email)) {
+        set({ isLoading: true, error: null });
+        try {
+          const { token, user } = await api.register(email, username, password);
+          api.setToken(token);
+          set({ user, isAuthenticated: true, isLoading: false });
+          return true;
+        } catch (error: any) {
+          set({ error: error.message || '注册失败', isLoading: false });
           return false;
         }
-
-        const newUser: User = {
-          id: generateId(),
-          email,
-          username,
-          nativeLanguage: 'zh',
-          learningLanguages: [],
-          currentLevel: {},
-          totalXP: 0,
-          streak: 0,
-          joinedAt: new Date().toISOString(),
-          achievements: [],
-        };
-
-        users.push({ ...newUser, password });
-        localStorage.setItem('users', JSON.stringify(users));
-        
-        set({ user: newUser, isAuthenticated: true });
-        return true;
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false });
+        api.clearToken();
+        set({ user: null, isAuthenticated: false, error: null });
       },
 
-      updateUser: (updates: Partial<User>) => {
-        const { user } = get();
-        if (user) {
-          const updatedUser = { ...user, ...updates };
-          set({ user: updatedUser });
-          
-          const users = JSON.parse(localStorage.getItem('users') || '[]');
-          const index = users.findIndex((u: StoredUser) => u.id === user.id);
-          if (index !== -1) {
-            users[index] = { ...users[index], ...updates };
-            localStorage.setItem('users', JSON.stringify(users));
-          }
+      updateUser: async (updates: Partial<User>) => {
+        try {
+          const { user } = await api.updateMe(updates);
+          set({ user });
+        } catch (error: any) {
+          console.error('更新用户失败:', error);
         }
       },
 
-      addXP: (amount: number) => {
-        const { user } = get();
-        if (user) {
-          get().updateUser({ totalXP: user.totalXP + amount });
+      addXP: async (amount: number) => {
+        try {
+          const { user } = await api.addXP(amount);
+          set({ user });
+        } catch (error: any) {
+          console.error('添加XP失败:', error);
         }
       },
 
-      updateStreak: () => {
-        const { user } = get();
-        if (user) {
-          const lastStudy = localStorage.getItem(`lastStudy_${user.id}`);
-          const today = new Date().toDateString();
-          
-          if (lastStudy !== today) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            
-            if (lastStudy === yesterday.toDateString()) {
-              get().updateUser({ streak: user.streak + 1 });
-            } else if (lastStudy !== today) {
-              get().updateUser({ streak: 1 });
-            }
-            
-            localStorage.setItem(`lastStudy_${user.id}`, today);
-          }
+      updateStreak: async () => {
+        try {
+          const { user } = await api.updateStreak();
+          set({ user });
+        } catch (error: any) {
+          console.error('更新连续学习天数失败:', error);
+        }
+      },
+
+      loadUser: async () => {
+        const token = api.getToken();
+        if (!token) return;
+
+        set({ isLoading: true });
+        try {
+          const { user } = await api.getMe();
+          set({ user, isAuthenticated: true, isLoading: false });
+        } catch (error: any) {
+          api.clearToken();
+          set({ user: null, isAuthenticated: false, isLoading: false });
         }
       },
     }),

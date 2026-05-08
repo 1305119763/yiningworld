@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  username          String
+  password          String
+  avatar            String?
+  nativeLanguage    String   @default("zh")
+  totalXP           Int      @default(0)
+  streak            Int      @default(0)
+  joinedAt          DateTime @default(now())
+  lastStudyDate     DateTime?
+  
+  learningLanguages LearningLanguage[]
+  progress          LearningProgress[]
+  achievements      UserAchievement[]
+  posts             Post[]
+  
+  @@map("users")
+}
+
+model LearningLanguage {
+  id         String @id @default(uuid())
+  userId     String
+  language   String
+  level      String @default("A1")
+  
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, language])
+  @@map("learning_languages")
+}
+
+model LearningProgress {
+  id            String @id @default(uuid())
+  userId        String
+  language      String
+  level         String @default("A1")
+  
+  vocabLearned  Int    @default(0)
+  vocabTotal    Int    @default(100)
+  masteryRate   Float  @default(0)
+  
+  grammarCompleted Int  @default(0)
+  grammarTotal     Int  @default(20)
+  grammarAccuracy  Float @default(0)
+  
+  speakingPracticed Int  @default(0)
+  speakingAvgScore  Float @default(0)
+  
+  listeningPracticed Int  @default(0)
+  listeningAvgScore  Float @default(0)
+  
+  xp            Int    @default(0)
+  lastStudyDate DateTime @default(now())
+  
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, language])
+  @@map("learning_progress")
+}
+
+model Achievement {
+  id          String @id @default(uuid())
+  title       String
+  description String
+  icon        String
+  category    String
+  requirementType String
+  requirementValue Int
+  xpReward    Int
+  
+  users       UserAchievement[]
+  
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String @id @default(uuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+  
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  authorId  String
+  language  String
+  title     String
+  content   String
+  likes     Int      @default(0)
+  comments  Int      @default(0)
+  createdAt DateTime @default(now())
+  tags      String   @default("")
+  
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  @@map("posts")
+}
+
+model CommunityGroup {
+  id          String @id @default(uuid())
+  name        String
+  description String
+  language    String
+  memberCount Int    @default(0)
+  image       String?
+  
+  @@map("community_groups")
+}
